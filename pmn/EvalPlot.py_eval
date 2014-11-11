@@ -1,0 +1,131 @@
+# -*- mode: python -*-
+# -*- coding: utf-8 -*-
+
+#import sys
+from PyQt4 import Qt
+from PyQt4 import QtCore
+#from PyQt4 import QtGui
+#import PyQt4.Qwt5 as Qwt
+#import numpy
+from numpy import *
+import PyQt4.Qwt5.anynumpy
+from Plotter import Plotter
+
+class EvalPlot(Plotter):
+    """Creates a EvalPlot plotting
+    """
+    def __init__(self, plot, func=None):
+        # Initialize some local variables
+        self.dataX = None
+        self.dataY = None
+        self.__func = None
+        self.__eval = None
+        def sub_dict(somedict, somekeys, default=None):
+            return dict([ (k, somedict.get(k, default)) for k in somekeys ])
+# 'abs', 'absolute', 
+# 'arccos', 'arccosh', 'arcsin', 'arcsinh', 'arctan', 'arctan2', 'arctanh', 
+# 'ceil', 
+# 'cos', 'cosh', 
+# 'deg2rad', 'degrees', 
+# 'e', 
+# 'log', 'log10', 'log1p', 'log2', 'logaddexp', 'logaddexp2', 
+# 'pi', 
+# 'rad2deg', 'radians', 'random', 
+# 'round', 
+# 'sin', 'sinc', 
+# 'sinh', 
+# 'sqrt', 'square', 
+# 'tan', 'tanh', 
+# 'trunc', 
+
+        self.__dict = sub_dict(globals(), ['math', 'abs', 'log', 'log10', 'acos', 'asin', 'atan', 'atan2', 'ceil', 'cos', 'cosh', 'degrees', 'e', 'exp', 'fabs', 'floor', 'fmod', 'frexp', 'hypot', 'ldexp', 'modf', 'pi', 'pow', 'radians', 'sin', 'sinh', 'sqrt', 'tan', 'tanh', 'sinc'] + \
+                                                ['abs', 'absolute', 'arccos', 'arccosh', 'arcsin', 'arcsinh', 'arctan', 'arctan2', 'arctanh', 'ceil', 'cos', 'cosh', 'deg2rad', 'degrees', 'e', 'log', 'log10', 'log1p', 'log2', 'logaddexp', 'logaddexp2', 'pi', 'rad2deg', 'radians', 'random', 'round', 'sin', 'sinc', 'sinh', 'sqrt', 'square', 'tan', 'tanh', 'trunc'])
+        #self.__dict = sub_dict(globals(), dir(numpy))
+        #print dir(PyQt4.Qwt5.anynumpy)
+        # Call parent init function
+        Plotter.__init__(self, plot)
+        self.curve.setPen(Qt.QPen(Qt.Qt.black, 2))
+        # Init
+        self.__setExpression(func)
+
+    # __init__()
+    '''
+    def setBounds(self, minX, maxX, minY, maxY):
+        Plotter.setBounds(self, minX, maxX, minY, maxY)
+        if self.__eval is None:
+            self.plot.replot()
+        else:
+            self.replot()
+    '''
+    # setBounds()
+    
+    def update(self):
+        #if not hasattr(self, '__eval') or self.__eval is None:
+        if self.__eval is None:
+            self.curve.setData([], [])
+            self.dataX, self.dataY = None, None
+        else:
+            self.ppc = self.plot.width()
+            x = self.__dict['x'] = linspace(self.minX, self.maxX, self.ppc)
+            y = eval(self.__eval, {"__builtins__":{}}, self.__dict)
+            if y is None:
+                raise Exception("Unknown eval problem", self.__eval, y, self.__func)
+            else:
+                self.dataX, self.dataY = x, y
+                self.curve.setData(x, y)
+
+    # update()
+
+    def __setExpression(self, s):
+        if s is None or len(s) == 0:
+            self.__eval = None
+            self.__func = None
+        else:
+            s = unicode(s)
+            try:
+                self.__eval = compile(s.replace("^","**"), "", 'eval')
+            except NameError as e:
+                print "Undefined variable: %s" % e
+            '''
+            except Exception as e:
+                print type(e)     # the exception instance
+                print e.args      # arguments stored in .args
+                print e           # __str__ allows args to printed directly
+                print sys.exc_info()[0]
+                print '-------------------------'
+            '''
+            self.__func = s
+        self.update()
+
+    # __setExpression()
+
+    def setExpression(self, s):
+        print self.__class__.__name__, 'setExpression', s
+        past = self.__func
+        self.__setExpression(s)
+        QtCore.QObject.emit(self, QtCore.SIGNAL("dataChanged"), self.setExpression, past)
+        self.plot.replot()
+
+    # setExpression()
+
+    def getExpression(self):
+        print self.__class__.__name__, 'getExpression', self.__func
+        return self.__func
+
+    # getExpression()
+
+    def serialize(self):
+        return self.getExpression()
+
+    # serialize()
+
+    def unserialize(self, data):
+        print self.__class__.__name__, 'unserialize', data
+        self.__setExpression(data)
+        self.plot.replot()
+
+        return self
+
+    # unserialize()
+
+# class EvalPlot

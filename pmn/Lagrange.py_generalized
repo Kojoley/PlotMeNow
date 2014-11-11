@@ -1,0 +1,184 @@
+# -*- mode: python -*-
+# -*- coding: utf-8 -*-
+
+from PyQt4.Qwt5.anynumpy import *
+from Plotter import *
+
+class Lagrange(Plotter):
+    """Creates a Lagrange plotting
+    """
+    def __init__(self, *args):
+        # Call parent init function
+        Plotter.__init__(self, *args)
+        self.curve.setPen(Qt.QPen(Qt.Qt.red, 2))
+        # Initialize some local variables
+        self.__SIZE = 7
+        self.__editable = False
+        self.movingPoint = None
+        self.points = []
+        self.markers = []
+        self.dataX = None
+        self.dataY = None
+        self.symbol = Qwt.QwtSymbol(Qwt.QwtSymbol.Ellipse, Qt.QBrush(Qt.Qt.gray, Qt.Qt.SolidPattern), Qt.QPen(Qt.Qt.blue, 1, Qt.Qt.SolidLine, Qt.Qt.RoundCap, Qt.Qt.RoundJoin), Qt.QSize(self.__SIZE, self.__SIZE))
+        QtCore.QObject.connect(self.plot, QtCore.SIGNAL("mousePressed"), self.mousePressed)
+        QtCore.QObject.connect(self.plot, QtCore.SIGNAL("mouseReleased"), self.mouseReleased)
+        QtCore.QObject.connect(self.plot, QtCore.SIGNAL("mouseMove"), self.mouseMove)
+
+    # __init__()
+
+    def lagrangian_interpolate(self, samples, func='sin(x)'):
+        """
+        Takes some samples as a list of tuples and returns a function that's
+        a lagrangian interpolation of all the samples.
+        """
+        X = 0 # the tuple index of the X variable in the samples
+        Y = 1 # the tuple index of the Y variable in the samples
+        n = len(samples)
+    
+        #def sub_dict(somedict, somekeys, default=None):
+        #    return dict([ (k, somedict.get(k, default)) for k in somekeys ])
+        #eval_dict = sub_dict(globals(), ['math', 'abs', 'log', 'log10', 'acos', 'asin', 'atan', 'atan2', 'ceil', 'cos', 'cosh', 'degrees', 'e', 'exp', 'fabs', 'floor', 'fmod', 'frexp', 'hypot', 'ldexp', 'modf', 'pi', 'pow', 'radians', 'sin', 'sinh', 'sqrt', 'tan', 'tanh', 'sinc'])
+        #
+        #func = eval(compile('lambda x: '+ str(func).replace("^","**"), "", 'eval'), {"__builtins__":{}}, eval_dict)
+        func = eval('lambda x: '+ str(func).replace("^","**"))
+
+        precall = ones(n)
+        for i in xrange(n):
+            precall[i] = func(samples[i][X])
+
+        precalc = ones(n)
+        for i in xrange(n):
+            for j in xrange(n):
+                if j != i:
+                    precalc[i] *= precall[i] - precall[j]
+            precalc[i] = samples[i][Y] / precalc[i]
+        
+        # define the L function as a function generator that generates L functions
+        # for a given i
+        def L(i):
+            "This function generates an L function for a given x_i"
+            def L_gen(x):
+                ret = 1.0
+                for j in xrange(n):
+                    if j != i:
+                        ret *= x - precall[j]
+                return ret
+            return L_gen
+    
+        return lambda x: sum(L(i)(func(x)) * precalc[i] for i in xrange(n))
+
+    # Lagrange interpolation
+
+    def toString(self):
+        samples = self.points
+
+        n = len(samples)
+
+        if n == 1:
+            return str(samples[0][1])
+        elif n == 0:
+            return None
+
+        def L(i):
+            ret = []
+            for j in xrange(n):
+                if j != i:
+                    ret.append('(x%+g)/(%g%+g)' % (-samples[j][0], samples[i][0], -samples[j][0]))
+            return '*'.join(ret)
+        return ''.join('%+g*%s' % (samples[i][1], L(i)) for i in xrange(n))
+
+    # toString()
+
+    def setBounds(self, minX, maxX, minY, maxY):
+        if len(self.points) == 0:
+            return None
+        x = linspace(minX, maxX, self.plot.width())
+        f = self.lagrangian_interpolate(self.points)
+        y = map(f, x.copy())
+        if y is not None:
+            self.curve.setData(x, y)
+            self.dataX, self.dataY = x, y
+            self.plot.replot()
+
+    # setBounds()
+
+    def overPoint(self, x, y):
+        smX, smY = self.plot.canvasMap(Qwt.QwtPlot.xBottom), self.plot.canvasMap(Qwt.QwtPlot.yLeft)
+        dx, dy = smX.invTransform(self.__SIZE) - smX.invTransform(0), smY.invTransform(self.__SIZE) - smY.invTransform(0)
+
+        for i in xrange(len(self.markers)):
+            if self.markers[i].boundingRect().adjusted(-dx, -dy, dx, dy).contains(x, y):
+                return i
+
+        return None
+
+    def mousePressed(self, event):
+        if event.button() != Qt.Qt.LeftButton:
+            return
+
+        x, y = self.plot.canvasMap(Qwt.QwtPlot.xBottom).invTransform(event.x()), self.plot.canvasMap(Qwt.QwtPlot.yLeft).invTransform(event.y())
+        self.movingPoint = self.overPoint(x, y)
+
+        if self.movingPoint is not None:
+            self.plot.setMovable(False)
+            self.__editable = False
+
+    # mousePressed()
+
+    def mouseReleased(self, event):
+        self.plot.setMovable()
+        self.__editable = True
+        self.movingPoint = None
+
+    # mouseReleased()
+
+    def mouseMove(self, event):
+        if self.movingPoint is None:
+            return
+
+        x, y = self.plot.canvasMap(Qwt.QwtPlot.xBottom).invTransform(event.x()), self.plot.canvasMap(Qwt.QwtPlot.yLeft).invTransform(event.y())
+        self.markers[self.movingPoint].setValue(x, y)
+        self.points[self.movingPoint] = (x, y)
+        self.replot()
+        QtCore.QObject.emit(self, QtCore.SIGNAL("dataChanged"))
+
+    # mouseReleased()
+
+    def mouseClick(self, event):
+        if not self.__editable:
+            return None
+
+        x, y = self.plot.canvasMap(Qwt.QwtPlot.xBottom).invTransform(event.x()), self.plot.canvasMap(Qwt.QwtPlot.yLeft).invTransform(event.y())
+        i = self.overPoint(x, y)
+
+        if i is None:
+            if event.button() == Qt.Qt.LeftButton:
+                print 'Lagrande add point', x, y
+                self.points.append((x, y))
+                marker = Qwt.QwtPlotMarker()
+                marker.setSymbol(self.symbol)
+                marker.setValue(x, y)
+                marker.attach(self.plot)
+                self.markers.append(marker)
+                self.replot()
+                QtCore.QObject.emit(self, QtCore.SIGNAL("dataChanged"))
+        elif event.button() == Qt.Qt.RightButton:
+            print 'Lagrande remove point', x, y
+            self.points.pop(i)
+            self.markers.pop(i).detach()
+            self.replot()
+            QtCore.QObject.emit(self, QtCore.SIGNAL("dataChanged"))
+
+    # mouseClick()
+
+    def setEditing(self, b=True):
+        self.__editable = bool(b)
+
+    # setEditing()
+
+    def isEditing(self):
+        return self.__editable
+
+    # isEditing()
+
+# class Lagrange
